@@ -246,7 +246,7 @@
         tg.expand();
 
         // ⚠️ ВАЖНО: ВСТАВЬ СЮДА IP ИЛИ ДОМЕН СВОЕГО СЕРВЕРА (ГДЕ КРУТИТСЯ bot.py)
-        const socket = io("http://62.109.20.81:5000");
+        const socket = io("https://planets-environmental-mpegs-codes.trycloudflare.com");
 
         const urlParams = new URLSearchParams(window.location.search);
         const matchId = urlParams.get('match');
@@ -814,5 +814,6 @@
         requestAnimationFrame(loop);
     </script>
 </body>
+
 
 </html>
