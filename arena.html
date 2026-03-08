@@ -1,0 +1,818 @@
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Undertale PvP Arena</title>
+    <!-- ПОДКЛЮЧАЕМ SOCKET.IO -->
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Courier+Prime:wght@400;700&display=swap');
+
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #000;
+            color: white;
+            font-family: 'Courier Prime', monospace;
+            overflow: hidden;
+            touch-action: none;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 1;
+            image-rendering: pixelated;
+        }
+
+        #top-ui {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            right: 10px;
+            display: flex;
+            justify-content: space-between;
+            font-size: 14px;
+            font-weight: bold;
+            z-index: 10;
+            pointer-events: none;
+        }
+
+        .hp-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 45%;
+        }
+
+        .hp-bar {
+            width: 100%;
+            height: 15px;
+            background: #555;
+            border: 1px solid #fff;
+            margin-top: 5px;
+        }
+
+        .hp-fill-player {
+            background: #2ed573;
+            height: 100%;
+            width: 100%;
+            transition: width 0.2s;
+        }
+
+        .hp-fill-enemy {
+            background: #ff4757;
+            height: 100%;
+            width: 100%;
+            transition: width 0.2s;
+        }
+
+        /* ИНДИКАТОР ХОДА */
+        #turn-indicator {
+            position: absolute;
+            top: 50px;
+            width: 100%;
+            text-align: center;
+            font-size: 18px;
+            color: #f1c40f;
+            z-index: 10;
+            text-shadow: 2px 2px #000;
+        }
+
+        #message {
+            position: absolute;
+            top: 20%;
+            left: 0;
+            width: 100%;
+            text-align: center;
+            font-size: 24px;
+            text-shadow: 2px 2px #000;
+            display: none;
+            z-index: 10;
+            pointer-events: none;
+        }
+
+        /* БЛОК ЛОГОВ БОЯ ВНИЗУ */
+        #battle-logs {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 22%;
+            background: rgba(0, 0, 0, 0.85);
+            border-top: 2px solid white;
+            z-index: 25;
+            padding: 10px;
+            box-sizing: border-box;
+            overflow-y: auto;
+            font-size: 13px;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            color: #ccc;
+            pointer-events: auto;
+        }
+
+        #menu-container {
+            position: absolute;
+            bottom: 22%;
+            left: 5%;
+            right: 5%;
+            height: 25%;
+            border: 4px solid white;
+            background: black;
+            z-index: 20;
+            padding: 10px;
+            display: none;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        #menu-text {
+            font-size: 16px;
+            margin-bottom: 10px;
+        }
+
+        .btn-row {
+            display: flex;
+            justify-content: center;
+            gap: 8px;
+            width: 100%;
+        }
+
+        .action-btn {
+            background: transparent;
+            color: white;
+            border: 2px solid #555;
+            font-family: 'Courier Prime', monospace;
+            font-size: 15px;
+            font-weight: bold;
+            padding: 8px;
+            flex: 1;
+            cursor: pointer;
+            text-transform: uppercase;
+            pointer-events: auto;
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .action-btn:active {
+            background: white;
+            color: black;
+        }
+
+        .action-btn:disabled {
+            color: #555;
+            border-color: #333;
+            cursor: not-allowed;
+        }
+
+        .ult-ready {
+            border-color: #ff4757 !important;
+            color: #ff4757 !important;
+            text-shadow: 0 0 5px #ff4757;
+            animation: pulse 1s infinite;
+        }
+
+        @keyframes pulse {
+            0% {
+                transform: scale(1);
+            }
+
+            50% {
+                transform: scale(1.05);
+            }
+
+            100% {
+                transform: scale(1);
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <div id="top-ui">
+        <div class="hp-container">ТЫ (<span id="my-name">...</span>) <div class="hp-bar">
+                <div id="hp-player" class="hp-fill-player"></div>
+            </div>
+        </div>
+        <div class="hp-container">ВРАГ (<span id="enemy-name">...</span>) <div class="hp-bar">
+                <div id="hp-enemy" class="hp-fill-enemy"></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="turn-indicator">ОЖИДАНИЕ СЕРВЕРА...</div>
+    <div id="message"></div>
+
+    <div id="menu-container">
+        <div id="menu-text">* Твой ход. Выбери действие.</div>
+        <div class="btn-row" id="main-btns">
+            <button class="action-btn" onpointerdown="openAttackMenu()">⚔️<br>АТАКА</button>
+            <button class="action-btn" onpointerdown="openItemsMenu()">🎒<br>ВЕЩИ</button>
+            <button class="action-btn" id="ult-btn" onpointerdown="startUltimate()">🔥<br>УЛЬТА (0%)</button>
+        </div>
+        <div class="btn-row" id="attack-btns" style="display: none;">
+            <button class="action-btn" onpointerdown="startSword()">🗡️ МЕЧ</button>
+            <button class="action-btn" onpointerdown="startBow()">🏹 ЛУК</button>
+            <button class="action-btn" onpointerdown="backToMain()">🔙 НАЗАД</button>
+        </div>
+        <div class="btn-row" id="items-btns" style="display: none;">
+            <button class="action-btn" id="potion-btn" onpointerdown="usePotion()">🧪 ЗЕЛЬЕ (3)</button>
+            <button class="action-btn" onpointerdown="backToMain()">🔙 НАЗАД</button>
+        </div>
+    </div>
+
+    <!-- БЛОК ЛОГОВ БОЯ -->
+    <div id="battle-logs"></div>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.expand();
+
+        // ⚠️ ВАЖНО: ВСТАВЬ СЮДА IP ИЛИ ДОМЕН СВОЕГО СЕРВЕРА (ГДЕ КРУТИТСЯ bot.py)
+        const socket = io("http://62.109.20.81:5000");
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const matchId = urlParams.get('match');
+        const myUserId = tg.initDataUnsafe?.user?.id || Math.floor(Math.random() * 10000); // Для тестов с компа
+
+        const canvas = document.getElementById("gameCanvas");
+        const ctx = canvas.getContext("2d");
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        const bossImg = new Image();
+        bossImg.crossOrigin = "Anonymous";
+        bossImg.src = "https://i.postimg.cc/zXVSgvry/e8bd1ce1-e312-4323-93a1-bfac789d06e5-removalai-preview.png";
+
+        let bossHitTimer = 0;
+        let bossOffsetY = 0;
+
+        // Состояния: 'waiting_server', 'menu', 'sword_attack', 'bow_wait', 'bow_charge', 'defense', 'waiting_turn', 'ult_mash'
+        let state = 'waiting_server';
+        let round = 1;
+
+        let inventory = { potions: 3 };
+        let currentWeapon = 'sword'; // Оружие, которым тебя бьют
+
+        let myHp = 2000;
+        let hpBeforeDefense = 2000; // Чтобы посчитать, сколько ХП ты потерял за фазу уворотов
+
+        let ultCharge = 0;
+        let ultTimer = 0;
+        let ultTaps = 0;
+        let ultSlashes = [];
+
+        const box = { x: canvas.width / 2 - 140, y: canvas.height / 2 - 200, w: 280, h: 280 };
+        let heart = { x: canvas.width / 2, y: box.y + box.h / 2, size: 14, isInvincible: false, speed: 200, color: "red", dmgMod: 1 };
+        let bullets = [];
+
+        let lastTime = performance.now();
+        let defenseTimer = 0;
+        let bulletSpawnTimer = 0;
+
+        let attackCursor = box.x;
+        let attackDir = 1;
+        let attackSpeed = 600;
+
+        let bowCharge = 0;
+        const bowChargeSpeed = 80;
+        let bowTargetPos = 50;
+        let bowTargetDir = 1;
+        let bowTargetSpeed = 40;
+        const bowZoneWidth = 14;
+
+        let joyActive = false;
+        const joyRadius = 55;
+        let joyDefaultX = canvas.width / 2;
+        let joyDefaultY = box.y + box.h + (canvas.height - (box.y + box.h)) / 2;
+        let joyBaseX = joyDefaultX; let joyBaseY = joyDefaultY;
+        let joyStickX = joyDefaultX; let joyStickY = joyDefaultY;
+        let joyDirX = 0; let joyDirY = 0;
+
+        // ==========================================
+        // 🌐 WEB SOCKETS EVENT LISTENERS
+        // ==========================================
+
+        socket.emit('join_match', { matchId: matchId, userId: myUserId });
+
+        socket.on('new_log', (text) => {
+            const logs = document.getElementById('battle-logs');
+            logs.innerHTML += `<div>> ${text}</div>`;
+            logs.scrollTop = logs.scrollHeight;
+        });
+
+        socket.on('update_state', (match) => {
+            let me = match.p1.id == myUserId ? match.p1 : match.p2;
+            let enemy = match.p1.id == myUserId ? match.p2 : match.p1;
+
+            myHp = me.hp;
+            document.getElementById("my-name").innerText = me.name;
+            document.getElementById("enemy-name").innerText = enemy.name;
+            document.getElementById("hp-player").style.width = Math.max(0, (me.hp / 2000 * 100)) + "%";
+            document.getElementById("hp-enemy").style.width = Math.max(0, (enemy.hp / 2000 * 100)) + "%";
+
+            let isMyTurnToAttack = (match.turn == myUserId && match.state !== 'defending');
+            let isMyTurnToDefend = (match.turn != myUserId && match.state === 'defending');
+
+            if (isMyTurnToAttack) {
+                state = 'menu';
+                document.getElementById('turn-indicator').innerText = "ТВОЙ ХОД (АТАКА)";
+                document.getElementById('turn-indicator').style.color = "#2ed573";
+                document.getElementById('menu-container').style.display = "flex";
+                backToMain(); // Обновляем меню
+            }
+            else if (isMyTurnToDefend) {
+                state = 'waiting_turn'; // Блокируем всё, пока не запустим увороты
+                document.getElementById('turn-indicator').innerText = "ЗАЩИЩАЙСЯ!";
+                document.getElementById('turn-indicator').style.color = "#ff4757";
+                document.getElementById('menu-container').style.display = "none";
+
+                // Враг выбрал оружие, запускаем Bullet Hell
+                currentWeapon = match.current_attack.weapon;
+                startDefense();
+            }
+            else {
+                state = 'waiting_turn';
+                document.getElementById('turn-indicator').innerText = `ЖДЕМ ХОД ПРОТИВНИКА...`;
+                document.getElementById('turn-indicator').style.color = "#f1c40f";
+                document.getElementById('menu-container').style.display = "none";
+            }
+        });
+
+        socket.on('game_over', (data) => {
+            state = 'gameover';
+            document.getElementById('menu-container').style.display = "none";
+            if (data.winner == myUserId) {
+                document.getElementById('turn-indicator').innerText = "🏆 ТЫ ПОБЕДИЛ В ДУЭЛИ!";
+                document.getElementById('turn-indicator').style.color = "#2ed573";
+                showMessage("ПОБЕДА!", "#2ed573", 0);
+            } else {
+                document.getElementById('turn-indicator').innerText = "💀 ТЫ ПОГИБ!";
+                document.getElementById('turn-indicator').style.color = "#ff4757";
+                showMessage("ПОРАЖЕНИЕ...", "#ff4757", 0);
+            }
+            setTimeout(() => tg.close(), 5000);
+        });
+
+        // ==========================================
+        // 🎮 ИГРОВАЯ ЛОГИКА
+        // ==========================================
+
+        function updateMenuUI() {
+            setMenuText(`* Выбери действие.`);
+            const ultBtn = document.getElementById("ult-btn");
+            if (ultCharge >= 100) {
+                ultBtn.innerHTML = `🔥<br>УЛЬТА ГОТОВА!`;
+                ultBtn.disabled = false;
+                ultBtn.classList.add("ult-ready");
+            } else {
+                ultBtn.innerHTML = `🔥<br>УЛЬТА (${Math.floor(ultCharge)}%)`;
+                ultBtn.disabled = true;
+                ultBtn.classList.remove("ult-ready");
+            }
+            document.getElementById("potion-btn").innerText = `🧪 ЗЕЛЬЕ (${inventory.potions})`;
+        }
+
+        function setMenuText(text) { document.getElementById("menu-text").innerText = text; }
+
+        function backToMain() {
+            document.getElementById("main-btns").style.display = "flex";
+            document.getElementById("attack-btns").style.display = "none";
+            document.getElementById("items-btns").style.display = "none";
+            updateMenuUI();
+        }
+
+        function openAttackMenu() {
+            document.getElementById("main-btns").style.display = "none";
+            document.getElementById("attack-btns").style.display = "flex";
+            setMenuText("* Выбери оружие для атаки:");
+        }
+
+        function openItemsMenu() {
+            document.getElementById("main-btns").style.display = "none";
+            document.getElementById("items-btns").style.display = "flex";
+            setMenuText("* В сумке пылятся припасы.");
+        }
+
+        function hideMenu() { document.getElementById("menu-container").style.display = "none"; }
+
+        function usePotion() {
+            if (inventory.potions <= 0) return;
+            inventory.potions--;
+
+            // Отправляем на сервер, что мы полечились вместо атаки
+            // Сервер должен обработать это (в данном концепте просто шлем фейк-атаку)
+            socket.emit('player_attack', { matchId, weapon: 'sword', damage: 0 });
+            showMessage("❤️ ТЫ ВЫПИЛ ЗЕЛЬЕ (+500 ХП)", "#2ed573");
+            hideMenu();
+            state = 'waiting_turn';
+        }
+
+        function startSword() {
+            currentWeapon = 'sword'; hideMenu(); state = 'sword_attack';
+            attackCursor = box.x; showMessage("ТАПНИ В ЦЕНТРЕ!", "white", 0);
+        }
+
+        function startBow() {
+            currentWeapon = 'bow'; hideMenu(); state = 'bow_wait';
+            bowCharge = 0;
+            bowTargetSpeed = 40 + (round * 15);
+            bowTargetPos = 50;
+            showMessage("ПОЙМАЙ МИШЕНЬ И ОТПУСТИ!", "white", 0);
+        }
+
+        function startUltimate() {
+            if (ultCharge < 100) return;
+            ultCharge = 0;
+            hideMenu();
+            state = 'ult_mash';
+            ultTimer = 3.0;
+            ultTaps = 0;
+            ultSlashes = [];
+            showMessage("ТАПАЙ КАК БЕЗУМНЫЙ!!!", "#ff4757", 0);
+        }
+
+        function handleDown(x, y) {
+            if (state === 'sword_attack') doSwordDamage();
+            else if (state === 'bow_wait') state = 'bow_charge';
+            else if (state === 'ult_mash') {
+                ultTaps++;
+                bossHitTimer = 0.2;
+                ultSlashes.push({ x: x, y: y, angle: Math.random() * Math.PI, life: 0.15 });
+            }
+            else if (state === 'defense') {
+                // Если клик ниже коробки - активируем джойстик
+                if (y > box.y + box.h) {
+                    joyActive = true;
+                    joyBaseX = x; joyBaseY = y;
+                    joyStickX = x; joyStickY = y;
+                    updateJoystickDirection(x, y);
+                }
+            }
+        }
+
+        function handleUp() {
+            if (state === 'bow_charge') doBowDamage(false);
+            if (state === 'defense' || joyActive) {
+                joyActive = false; joyDirX = 0; joyDirY = 0;
+                joyBaseX = joyDefaultX; joyBaseY = joyDefaultY;
+                joyStickX = joyDefaultX; joyStickY = joyDefaultY;
+            }
+        }
+
+        function handleMove(x, y) {
+            if (joyActive) {
+                let dx = x - joyBaseX; let dy = y - joyBaseY;
+                let dist = Math.sqrt(dx * dx + dy * dy);
+                if (dist > joyRadius) { dx = (dx / dist) * joyRadius; dy = (dy / dist) * joyRadius; }
+                joyStickX = joyBaseX + dx; joyStickY = joyBaseY + dy;
+                updateJoystickDirection(joyStickX, joyStickY);
+            }
+        }
+
+        function updateJoystickDirection(x, y) {
+            let dx = x - joyBaseX; let dy = y - joyBaseY;
+            let dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist > 0) { joyDirX = dx / joyRadius; joyDirY = dy / joyRadius; }
+            else { joyDirX = 0; joyDirY = 0; }
+        }
+
+        canvas.addEventListener("pointerdown", (e) => handleDown(e.clientX, e.clientY));
+        canvas.addEventListener("pointermove", (e) => handleMove(e.clientX, e.clientY));
+        window.addEventListener("pointerup", handleUp);
+
+        function doSwordDamage() {
+            state = 'waiting_turn'; document.getElementById("message").style.display = "none";
+            const center = box.x + box.w / 2;
+            const dist = Math.abs(attackCursor - center);
+            let dmg = dist < 15 ? 350 : dist < 50 ? 150 : 30;
+
+            // ОТПРАВЛЯЕМ УРОН НА СЕРВЕР
+            socket.emit('player_attack', { matchId, weapon: 'sword', damage: dmg });
+        }
+
+        function doBowDamage(snapped) {
+            state = 'waiting_turn'; document.getElementById("message").style.display = "none";
+            let dmg = 0;
+            if (!snapped) {
+                let dist = Math.abs(bowCharge - bowTargetPos);
+                if (dist <= bowZoneWidth / 2) dmg = 450;
+                else if (dist <= bowZoneWidth) dmg = 150;
+                else dmg = 10;
+            }
+            // ОТПРАВЛЯЕМ УРОН НА СЕРВЕР
+            socket.emit('player_attack', { matchId, weapon: 'bow', damage: dmg });
+        }
+
+        function startDefense() {
+            state = 'defense';
+            defenseTimer = 5.0;
+            bullets = [];
+            hpBeforeDefense = myHp; // Запоминаем ХП до начала уворотов
+            heart.x = box.x + box.w / 2; heart.y = box.y + box.h / 2;
+
+            joyActive = false; joyDirX = 0; joyDirY = 0;
+            joyBaseX = joyDefaultX; joyBaseY = joyDefaultY;
+            joyStickX = joyDefaultX; joyStickY = joyDefaultY;
+
+            if (currentWeapon === 'sword') {
+                heart.speed = 180; heart.color = "#ff4757"; heart.dmgMod = 1;
+            } else {
+                heart.speed = 300; heart.color = "#2ed573"; heart.dmgMod = 1.5;
+            }
+        }
+
+        function finishDefense() {
+            state = 'waiting_turn';
+            let hpLost = hpBeforeDefense - myHp; // Считаем, сколько мы потеряли от пуль
+            // ОТПРАВЛЯЕМ РЕЗУЛЬТАТ ЗАЩИТЫ НА СЕРВЕР
+            socket.emit('defense_done', { matchId, userId: myUserId, hpLost: hpLost });
+        }
+
+        function showMessage(text, color = "white", duration = 1500) {
+            const msg = document.getElementById("message");
+            msg.innerText = text; msg.style.color = color; msg.style.display = "block";
+            if (duration > 0) setTimeout(() => { if (state !== 'gameover') msg.style.display = "none"; }, duration);
+        }
+
+        function update(dt) {
+            if (state === 'gameover') return;
+
+            let targetBossOffsetY = (state === 'menu' || state === 'ult_mash') ? 0 : -canvas.height;
+            bossOffsetY += (targetBossOffsetY - bossOffsetY) * 6 * dt;
+
+            if (bossHitTimer > 0) bossHitTimer -= dt;
+
+            for (let i = ultSlashes.length - 1; i >= 0; i--) {
+                ultSlashes[i].life -= dt;
+                if (ultSlashes[i].life <= 0) ultSlashes.splice(i, 1);
+            }
+
+            if (state === 'ult_mash') {
+                ultTimer -= dt;
+                if (ultTimer <= 0) {
+                    state = 'waiting_turn';
+                    document.getElementById("message").style.display = "none";
+                    let finalDmg = ultTaps * 25;
+                    // ОТПРАВЛЯЕМ УРОН ОТ УЛЬТЫ НА СЕРВЕР
+                    socket.emit('player_attack', { matchId, weapon: 'sword', damage: finalDmg });
+                }
+            }
+
+            if (state === 'sword_attack') {
+                attackCursor += attackSpeed * attackDir * dt;
+                if (attackCursor > box.x + box.w) attackDir = -1;
+                if (attackCursor < box.x) attackDir = 1;
+            }
+
+            if (state === 'bow_wait' || state === 'bow_charge') {
+                bowTargetPos += bowTargetSpeed * bowTargetDir * dt;
+                if (bowTargetPos > 100 - bowZoneWidth / 2) { bowTargetPos = 100 - bowZoneWidth / 2; bowTargetDir = -1; }
+                if (bowTargetPos < bowZoneWidth / 2) { bowTargetPos = bowZoneWidth / 2; bowTargetDir = 1; }
+            }
+
+            if (state === 'bow_charge') {
+                bowCharge += bowChargeSpeed * dt;
+                if (bowCharge >= 100) { bowCharge = 100; doBowDamage(true); }
+            }
+
+            if (state === 'defense') {
+                defenseTimer -= dt;
+                bulletSpawnTimer -= dt;
+
+                heart.x += joyDirX * heart.speed * dt;
+                heart.y += joyDirY * heart.speed * dt;
+
+                if (heart.x < box.x + heart.size) heart.x = box.x + heart.size;
+                if (heart.x > box.x + box.w - heart.size) heart.x = box.x + box.w - heart.size;
+                if (heart.y < box.y + heart.size) heart.y = box.y + heart.size;
+                if (heart.y > box.y + box.h - heart.size) heart.y = box.y + box.h - heart.size;
+
+                // --- СПАВН СНАРЯДОВ ---
+                if (defenseTimer > 0.5 && bulletSpawnTimer <= 0) {
+                    bulletSpawnTimer = 0.2 - (round * 0.03);
+                    let side = Math.floor(Math.random() * 4);
+                    let bx, by, vx, vy, gx = 0, gy = 0;
+                    let speed = 150 + (round * 50);
+
+                    if (currentWeapon === 'sword') {
+                        // Обычные пули по прямой
+                        if (side === 0) { bx = box.x + Math.random() * box.w; by = box.y - 20; vx = 0; vy = speed; }
+                        else if (side === 1) { bx = box.x - 20; by = box.y + Math.random() * box.h; vx = speed; vy = 0; }
+                        else if (side === 2) { bx = box.x + box.w + 20; by = box.y + Math.random() * box.h; vx = -speed; vy = 0; }
+                        else { bx = box.x + Math.random() * box.w; by = box.y + box.h + 20; vx = 0; vy = -speed; }
+
+                        bullets.push({ x: bx, y: by, vx: vx, vy: vy, gx: 0, gy: 0, radius: 5, type: 'bullet' });
+                    } else {
+                        // СТРЕЛЫ ЛУКА ПО ДУГЕ
+                        let arcForce = 250 + (round * 40);
+
+                        if (side === 0) {
+                            bx = box.x + Math.random() * box.w; by = box.y - 20;
+                            vx = (Math.random() > 0.5 ? 1 : -1) * speed;
+                            vy = speed;
+                            gx = (vx > 0 ? -1 : 1) * arcForce;
+                            gy = 0;
+                        }
+                        else if (side === 1) {
+                            bx = box.x - 20; by = box.y + Math.random() * box.h;
+                            vx = speed;
+                            vy = (Math.random() > 0.5 ? 1 : -1) * speed;
+                            gx = 0;
+                            gy = (vy > 0 ? -1 : 1) * arcForce;
+                        }
+                        else if (side === 2) {
+                            bx = box.x + box.w + 20; by = box.y + Math.random() * box.h;
+                            vx = -speed;
+                            vy = (Math.random() > 0.5 ? 1 : -1) * speed;
+                            gx = 0;
+                            gy = (vy > 0 ? -1 : 1) * arcForce;
+                        }
+                        else {
+                            bx = box.x + Math.random() * box.w; by = box.y + box.h + 20;
+                            vx = (Math.random() > 0.5 ? 1 : -1) * speed;
+                            vy = -speed;
+                            gx = (vx > 0 ? -1 : 1) * arcForce;
+                            gy = 0;
+                        }
+
+                        bullets.push({ x: bx, y: by, vx: vx, vy: vy, gx: gx, gy: gy, radius: 4, type: 'arrow' });
+                    }
+                }
+
+                // --- ОБНОВЛЕНИЕ ПОЛЕТА СНАРЯДОВ ---
+                for (let i = bullets.length - 1; i >= 0; i--) {
+                    let b = bullets[i];
+
+                    b.vx += b.gx * dt;
+                    b.vy += b.gy * dt;
+
+                    b.x += b.vx * dt;
+                    b.y += b.vy * dt;
+
+                    let dx = b.x - heart.x; let dy = b.y - heart.y;
+                    if (!heart.isInvincible && Math.sqrt(dx * dx + dy * dy) < b.radius + heart.size) {
+                        myHp -= Math.floor(25 * heart.dmgMod); // ОТНИМАЕМ ХП ЛОКАЛЬНО
+                        document.getElementById("hp-player").style.width = Math.max(0, (myHp / 2000 * 100)) + "%";
+
+                        if (myHp <= 0) {
+                            myHp = 0;
+                            finishDefense(); // Умер - сразу шлем инфу на сервер
+                            return;
+                        }
+                        heart.isInvincible = true;
+                        setTimeout(() => heart.isInvincible = false, 800);
+                    }
+                }
+
+                if (defenseTimer <= 0) {
+                    round++;
+                    ultCharge = Math.min(100, ultCharge + 35);
+                    finishDefense(); // Сообщаем серверу, что мы выжили фазу
+                }
+            }
+        }
+
+        function drawHeart(x, y, size, color) {
+            ctx.fillStyle = color; ctx.beginPath();
+            ctx.moveTo(x, y + size / 4);
+            ctx.quadraticCurveTo(x, y, x - size / 2, y);
+            ctx.quadraticCurveTo(x - size, y, x - size, y + size / 2.5);
+            ctx.quadraticCurveTo(x - size, y + size, x, y + size * 1.5);
+            ctx.quadraticCurveTo(x + size, y + size, x + size, y + size / 2.5);
+            ctx.quadraticCurveTo(x + size, y, x + size / 2, y);
+            ctx.quadraticCurveTo(x, y, x, y + size / 4); ctx.fill();
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.imageSmoothingEnabled = false;
+
+            if (bossImg.complete && bossImg.naturalWidth > 0) {
+                let targetHeight = Math.min(600, canvas.height * 0.6);
+                let ratio = bossImg.naturalWidth / bossImg.naturalHeight;
+                let drawWidth = targetHeight * ratio;
+                let drawHeight = targetHeight;
+
+                let imgX = canvas.width / 2 - drawWidth / 2;
+                let availableHeight = canvas.height * 0.75;
+                let baseImgY = availableHeight / 2 - drawHeight / 2;
+                if (baseImgY < 40) baseImgY = 40;
+
+                let bobbing = Math.sin(Date.now() / 400) * 8;
+                let drawX = imgX;
+
+                if (bossHitTimer > 0) {
+                    drawX += (Math.random() - 0.5) * 20;
+                    bobbing += (Math.random() - 0.5) * 20;
+                }
+
+                ctx.drawImage(bossImg, drawX, baseImgY + bobbing + bossOffsetY, drawWidth, drawHeight);
+            }
+
+            if (state === 'ult_mash') {
+                ctx.fillStyle = "rgba(255, 255, 255, 0.8)";
+                ctx.font = "bold 60px 'Courier Prime'";
+                ctx.textAlign = "center";
+                ctx.fillText(Math.ceil(ultTimer), canvas.width / 2, canvas.height * 0.7);
+
+                ctx.lineWidth = 4;
+                ctx.strokeStyle = "white";
+                ultSlashes.forEach(slash => {
+                    ctx.save();
+                    ctx.translate(slash.x, slash.y);
+                    ctx.rotate(slash.angle);
+                    ctx.globalAlpha = slash.life / 0.15;
+                    ctx.beginPath();
+                    ctx.moveTo(-40, 0);
+                    ctx.lineTo(40, 0);
+                    ctx.stroke();
+                    ctx.restore();
+                });
+            }
+
+            if (state !== 'menu' && state !== 'ult_mash' && state !== 'waiting_server') {
+                ctx.strokeStyle = "white"; ctx.lineWidth = 4;
+                ctx.strokeRect(box.x, box.y, box.w, box.h);
+            }
+
+            if (state === 'sword_attack' || (state === 'waiting_turn' && currentWeapon === 'sword')) {
+                ctx.fillStyle = "rgba(46, 213, 115, 0.4)"; ctx.fillRect(box.x + box.w / 2 - 15, box.y, 30, box.h);
+                ctx.fillStyle = "white"; ctx.fillRect(attackCursor - 2, box.y - 10, 4, box.h + 20);
+            }
+
+            if (state === 'bow_wait' || state === 'bow_charge' || (state === 'waiting_turn' && currentWeapon === 'bow')) {
+                ctx.fillStyle = "#333"; ctx.fillRect(box.x + 20, box.y + box.h / 2 - 15, box.w - 40, 30);
+                let zx = box.x + 20 + (box.w - 40) * ((bowTargetPos - bowZoneWidth / 2) / 100);
+                let zw = (box.w - 40) * (bowZoneWidth / 100);
+                ctx.fillStyle = "rgba(46, 213, 115, 0.8)";
+                ctx.fillRect(zx, box.y + box.h / 2 - 15, zw, 30);
+                ctx.fillStyle = "white";
+                ctx.fillRect(box.x + 20, box.y + box.h / 2 - 15, (box.w - 40) * (bowCharge / 100), 30);
+            }
+
+            if (state === 'defense') {
+                bullets.forEach(b => {
+                    if (b.type === 'arrow') {
+                        ctx.save();
+                        ctx.translate(b.x, b.y);
+                        ctx.rotate(Math.atan2(b.vy, b.vx));
+                        ctx.fillStyle = "#2ed573"; ctx.beginPath(); ctx.moveTo(8, 0); ctx.lineTo(-4, -4); ctx.lineTo(-2, 0); ctx.lineTo(-4, 4); ctx.fill();
+                        ctx.strokeStyle = "white"; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(-2, 0); ctx.lineTo(-12, 0); ctx.stroke();
+                        ctx.restore();
+                    } else {
+                        ctx.fillStyle = "white";
+                        ctx.beginPath(); ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2); ctx.fill();
+                    }
+                });
+
+                if (!heart.isInvincible || Math.floor(Date.now() / 100) % 2 === 0) {
+                    drawHeart(heart.x, heart.y, heart.size, heart.color);
+                }
+
+                if (!joyActive) {
+                    ctx.fillStyle = "rgba(255, 255, 255, 0.6)"; ctx.font = "16px 'Courier Prime'"; ctx.textAlign = "center";
+                    ctx.fillText("🕹️ ТЯНИ ЗДЕСЬ", joyBaseX, joyBaseY - joyRadius - 15);
+                }
+
+                ctx.beginPath(); ctx.arc(joyBaseX, joyBaseY, joyRadius, 0, Math.PI * 2);
+                ctx.fillStyle = joyActive ? "rgba(255, 255, 255, 0.15)" : "rgba(255, 255, 255, 0.1)"; ctx.fill();
+                ctx.strokeStyle = "rgba(255, 255, 255, 0.3)"; ctx.lineWidth = 2; ctx.stroke();
+
+                ctx.beginPath(); ctx.arc(joyStickX, joyStickY, 25, 0, Math.PI * 2);
+                ctx.fillStyle = joyActive ? "rgba(255, 255, 255, 0.7)" : "rgba(255, 255, 255, 0.4)"; ctx.fill();
+            }
+        }
+
+        function loop(timestamp) {
+            let dt = (timestamp - lastTime) / 1000;
+            if (dt > 0.1) dt = 0.1;
+            lastTime = timestamp;
+
+            update(dt);
+            draw();
+            requestAnimationFrame(loop);
+        }
+
+        requestAnimationFrame(loop);
+    </script>
+</body>
+
+</html>
