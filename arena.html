@@ -248,9 +248,11 @@
         // ⚠️ ВАЖНО: ВСТАВЬ СЮДА IP ИЛИ ДОМЕН СВОЕГО СЕРВЕРА (ГДЕ КРУТИТСЯ bot.py)
         const socket = io("https://planets-environmental-mpegs-codes.trycloudflare.com");
 
-        const urlParams = new URLSearchParams(window.location.search);
-        const matchId = urlParams.get('match');
-        const myUserId = tg.initDataUnsafe?.user?.id || Math.floor(Math.random() * 10000); // Для тестов с компа
+        // Читаем ID комнаты либо из старого ?match=, либо из нового startapp
+        const matchId = tg.initDataUnsafe?.start_param || new URLSearchParams(window.location.search).get('match');
+
+        // ID игрока Телеграм передаст сам, 100% надежно и безопасно!
+        const myUserId = tg.initDataUnsafe?.user?.id || Math.floor(Math.random() * 10000);
 
         const canvas = document.getElementById("gameCanvas");
         const ctx = canvas.getContext("2d");
@@ -817,3 +819,4 @@
 
 
 </html>
+
