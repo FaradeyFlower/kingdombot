@@ -246,7 +246,7 @@
         tg.expand();
 
         // ⚠️ ВАЖНО: ВСТАВЬ СЮДА IP ИЛИ ДОМЕН СВОЕГО СЕРВЕРА (ГДЕ КРУТИТСЯ bot.py)
-        const socket = io("https://api.faradeyflower.ru");
+        const socket = io("https://api.faradeyflower.ru", { transports: ['websocket'] });
 
         // Читаем ID комнаты либо из старого ?match=, либо из нового startapp
         const matchId = tg.initDataUnsafe?.start_param || new URLSearchParams(window.location.search).get('match');
@@ -819,6 +819,7 @@
 
 
 </html>
+
 
 
 
